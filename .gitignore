@@ -1,0 +1,16 @@
+# Secrete: NU se urcă niciodată pe GitHub
+.env
+.streamlit/secrets.toml
+
+# Mediul virtual (se recreează oricând din requirements.txt)
+venv/
+.venv/
+
+# Fișiere generate automat de Python
+__pycache__/
+*.pyc
+
+# Fișiere de sistem / editor
+.DS_Store
+Thumbs.db
+.vscode/
