@@ -3,6 +3,9 @@
 from typing import Protocol
 
 import ollama
+import httpx2  # HTTP client used internally by google-genai
+from google import genai
+from google.genai import errors, types
 
 
 class LLMError(Exception):
@@ -57,4 +60,37 @@ class OllamaProvider:
         content = response.message.content
         if not content:  # content is "str | None": the model may return nothing
             raise LLMError("The model returned an empty response. Try again.")
+        return content
+
+class GeminiProvider:
+    """Runs a model in Google's cloud through the Gemini API (fast, needs an API key)."""
+
+    def __init__(self, api_key: str, model: str) -> None:
+        if not api_key:
+            # Fail early with a clear message instead of a cryptic 401 later
+            raise LLMError("GEMINI_API_KEY is missing. Add it to your .env file.")
+        self.name = f"Gemini ({model})"
+        self.model = model
+        self._client = genai.Client(api_key=api_key)  # the key stays inside the client
+
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        try:
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=user_prompt,
+                # Gemini receives the system prompt as a config option, not as a message
+                config=types.GenerateContentConfig(system_instruction=system_prompt),
+            )
+        except errors.ClientError as e:
+            # 4xx: our side is wrong (invalid key, unknown model, quota exceeded)
+            raise LLMError(f"Gemini rejected the request ({e.code}): {e.message}") from None
+        except errors.ServerError as e:
+            # 5xx: Google's side is having problems; retrying later usually helps
+            raise LLMError(f"Gemini is temporarily unavailable ({e.code}): {e.message}. Try again.") from None
+        except httpx2.HTTPError:
+            raise LLMError("Could not connect to Gemini. Check your internet connection.") from None
+
+        content = response.text
+        if not content:  # e.g. the answer was blocked by safety filters
+            raise LLMError("Gemini returned an empty response. Try again.")
         return content
