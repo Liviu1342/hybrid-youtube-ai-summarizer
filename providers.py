@@ -4,8 +4,10 @@ from typing import Protocol
 
 import ollama
 import httpx2  # HTTP client used internally by google-genai
+import httpx  # HTTP client used internally by ollama
 from google import genai
 from google.genai import errors, types
+from collections.abc import Iterator
 
 
 class LLMError(Exception):
@@ -37,14 +39,10 @@ class OllamaProvider:
         self._client = ollama.Client(host=host)  # no network call happens here yet
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
-        messages = [
-            {"role": "system", "content": system_prompt},  # how the model should behave
-            {"role": "user", "content": user_prompt},      # what we actually ask
-        ]
         try:
             response = self._client.chat(
                 model=self.model,
-                messages=messages,
+                messages=self._messages(system_prompt, user_prompt),
                 # Ollama's default context is 4096 tokens; long transcripts need more
                 options={"num_ctx": self.context_window},
             )
@@ -55,10 +53,33 @@ class OllamaProvider:
         if not content:  # content is "str | None": the model may return nothing
             raise LLMError("The model returned an empty response. Try again.")
         return content
+    
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        """Yield the answer piece by piece, as the model writes it."""
+        try:
+            chunks = self._client.chat(
+                model=self.model,
+                messages=self._messages(system_prompt, user_prompt),
+                options={"num_ctx": self.context_window},
+                stream=True,  # receive the answer in small pieces
+            )
+            for chunk in chunks:
+                if chunk.message.content:  # some chunks carry no text
+                    yield chunk.message.content
+        # In streaming mode, ollama lets httpx's own ConnectError through
+        except (ConnectionError, httpx.ConnectError, ollama.ResponseError) as e:
+            raise self._friendly_error(e) from None
+
+    def _messages(self, system_prompt: str, user_prompt: str) -> list[dict[str, str]]:
+        """Build the chat messages in the format Ollama expects."""
+        return [
+            {"role": "system", "content": system_prompt},  # how the model should behave
+            {"role": "user", "content": user_prompt},      # what we actually ask
+        ]
 
     def _friendly_error(self, error: Exception) -> LLMError:
         """Translate a technical Ollama error into a message the user understands."""
-        if isinstance(error, ConnectionError):
+        if isinstance(error, (ConnectionError, httpx.ConnectError)):
             return LLMError("Ollama is not running. Start it and try again.")
         if isinstance(error, ollama.ResponseError) and error.status_code == 404:
             return LLMError(f"Model '{self.model}' not found. Run: ollama pull {self.model}")
@@ -73,26 +94,56 @@ class GeminiProvider:
             raise LLMError("GEMINI_API_KEY is missing. Add it to your .env file.")
         self.name = f"Gemini ({model})"
         self.model = model
-        self._client = genai.Client(api_key=api_key)  # the key stays inside the client
+        # Retry transient errors (429, 5xx) automatically, with growing pauses
+        retry = types.HttpRetryOptions(attempts=3)
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=retry),
+        )
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         try:
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=user_prompt,
-                # Gemini receives the system prompt as a config option, not as a message
-                config=types.GenerateContentConfig(system_instruction=system_prompt),
+                config=self._config(system_prompt),
             )
-        except errors.ClientError as e:
-            # 4xx: our side is wrong (invalid key, unknown model, quota exceeded)
-            raise LLMError(f"Gemini rejected the request ({e.code}): {e.message}") from None
-        except errors.ServerError as e:
-            # 5xx: Google's side is having problems; retrying later usually helps
-            raise LLMError(f"Gemini is temporarily unavailable ({e.code}): {e.message}. Try again.") from None
-        except httpx2.HTTPError:
-            raise LLMError("Could not connect to Gemini. Check your internet connection.") from None
+        except (errors.APIError, httpx2.HTTPError) as e:
+            raise self._friendly_error(e) from None
 
         content = response.text
         if not content:  # e.g. the answer was blocked by safety filters
             raise LLMError("Gemini returned an empty response. Try again.")
         return content
+
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        """Yield the answer piece by piece, as the model writes it."""
+        try:
+            chunks = self._client.models.generate_content_stream(
+                model=self.model,
+                contents=user_prompt,
+                config=self._config(system_prompt),
+            )
+            for chunk in chunks:
+                if chunk.text:  # some chunks carry no text
+                    yield chunk.text
+        except (errors.APIError, httpx2.HTTPError) as e:
+            raise self._friendly_error(e) from None
+
+    def _config(self, system_prompt: str) -> types.GenerateContentConfig:
+        """Gemini receives the system prompt as a config option, not as a message."""
+        return types.GenerateContentConfig(system_instruction=system_prompt)
+
+    def _friendly_error(self, error: Exception) -> LLMError:
+        """Translate a technical Gemini error into a message the user understands."""
+        if isinstance(error, errors.ClientError):
+            # 4xx: our side is wrong (invalid key, unknown model, quota exceeded)
+            return LLMError(f"Gemini rejected the request ({error.code}): {error.message}")
+        if isinstance(error, errors.ServerError):
+            # 5xx: Google's side is having problems; retrying later usually helps
+            return LLMError(
+                f"Gemini is temporarily unavailable ({error.code}): {error.message}. Try again."
+            )
+        if isinstance(error, errors.APIError):
+            return LLMError(f"Gemini returned an error ({error.code}): {error.message}")
+        return LLMError("Could not connect to Gemini. Check your internet connection.")
