@@ -5,7 +5,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from providers import GeminiProvider, LLMError, LLMProvider, OllamaProvider
+from providers import BedrockProvider, GeminiProvider, LLMError, LLMProvider, OllamaProvider
 from summarizer import stream_summary
 from utils import TranscriptError, extract_video_id, get_transcript
 
@@ -13,6 +13,7 @@ load_dotenv()  # read .env once, when the app starts
 
 OLLAMA = "🖥️ Ollama (local & private)"
 GEMINI = "☁️ Gemini (cloud & fast)"
+BEDROCK = "🪨 Bedrock (cloud & AWS)"
 
 
 def build_provider(choice: str) -> LLMProvider:
@@ -21,6 +22,12 @@ def build_provider(choice: str) -> LLMProvider:
         return OllamaProvider(
             model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
             host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+        )
+    if choice == BEDROCK:
+        return BedrockProvider(
+            api_key=os.getenv("AWS_BEARER_TOKEN_BEDROCK", ""),
+            model=os.getenv("BEDROCK_MODEL", "anthropic.claude-sonnet-5-5"),
+            region=os.getenv("AWS_REGION", "us-east-1"),
         )
     return GeminiProvider(
         api_key=os.getenv("GEMINI_API_KEY", ""),
@@ -41,7 +48,7 @@ st.caption("Summarize any YouTube video locally with Ollama or in the cloud with
 # --- Sidebar: settings ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    engine = st.radio("AI engine", [OLLAMA, GEMINI])
+    engine = st.radio("AI engine", [OLLAMA, GEMINI, BEDROCK])
     language = st.selectbox("Summary language", ["English", "Romanian"])
 
 # --- Main area: input ---

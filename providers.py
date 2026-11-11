@@ -1,10 +1,12 @@
 """LLM providers: one common contract, multiple interchangeable implementations."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
+import anthropic
 import ollama
 import httpx2  # HTTP client used internally by google-genai
 import httpx  # HTTP client used internally by ollama
+from anthropic.lib.bedrock import AnthropicBedrockMantle
 from google import genai
 from google.genai import errors, types
 from collections.abc import Iterator
@@ -151,3 +153,71 @@ class GeminiProvider:
         if isinstance(error, errors.APIError):
             return LLMError(f"Gemini returned an error ({error.code}): {error.message}")
         return LLMError("Could not connect to Gemini. Check your internet connection.")
+
+class BedrockProvider:
+    """Runs Claude in Amazon Bedrock (cloud, needs a Bedrock API key)."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        region: str = "us-east-1",
+        max_tokens: int = 16_000,
+    ) -> None:
+        if not api_key:
+            raise LLMError("AWS_BEARER_TOKEN_BEDROCK is missing. Add it to your .env file.")
+        self.name = f"Bedrock ({model})"
+        self.model = model
+        self.max_tokens = max_tokens
+        # Bedrock-specific client; it already retries 429/5xx errors twice by itself
+        self._client = AnthropicBedrockMantle(api_key=api_key, aws_region=region)
+
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        try:
+            response = self._client.messages.create(**self._request(system_prompt, user_prompt))
+        except anthropic.APIError as e:
+            raise self._friendly_error(e) from None
+
+        if response.stop_reason == "refusal":
+            raise LLMError("Claude declined to summarize this content.")
+        # The answer is a list of content blocks; keep only the text ones
+        content = "".join(block.text for block in response.content if block.type == "text")
+        if not content:
+            raise LLMError("Claude returned an empty response. Try again.")
+        return content
+
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        """Yield the answer piece by piece, as the model writes it."""
+        try:
+            with self._client.messages.stream(**self._request(system_prompt, user_prompt)) as stream:
+                yield from stream.text_stream  # = foreach (var t in ...) yield return t;
+                if stream.get_final_message().stop_reason == "refusal":
+                    raise LLMError("Claude declined to summarize this content.")
+        except anthropic.APIError as e:
+            raise self._friendly_error(e) from None
+
+    def _request(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
+        """The request settings shared by generate() and stream()."""
+        return {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "system": system_prompt,  # Claude takes the system prompt as its own field
+            "messages": [{"role": "user", "content": user_prompt}],
+            # A summary needs little reasoning: low effort = faster and cheaper
+            "output_config": {"effort": "low"},
+        }
+
+    def _friendly_error(self, error: anthropic.APIError) -> LLMError:
+        """Translate a technical Bedrock error into a message the user understands."""
+        if isinstance(error, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
+            return LLMError(
+                f"Bedrock rejected the API key or model access ({error.status_code}). "
+                "Check the key and that this model is enabled in your AWS account."
+            )
+        if isinstance(error, anthropic.NotFoundError):
+            return LLMError(f"Model '{self.model}' not found on Bedrock. Check BEDROCK_MODEL.")
+        if isinstance(error, anthropic.RateLimitError):
+            return LLMError("Bedrock rate limit reached. Wait a minute and try again.")
+        if isinstance(error, anthropic.APIStatusError):
+            return LLMError(f"Bedrock returned an error ({error.status_code}): {error.message}")
+        return LLMError("Could not connect to Bedrock. Check your internet connection.")

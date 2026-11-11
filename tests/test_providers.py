@@ -6,7 +6,7 @@ import ollama
 import pytest
 import httpx
 
-from providers import GeminiProvider, LLMError, OllamaProvider
+from providers import BedrockProvider, GeminiProvider, LLMError, OllamaProvider
 
 
 def fake_chat_response(content: str | None) -> SimpleNamespace:
@@ -76,3 +76,29 @@ def test_gemini_stream_yields_pieces(monkeypatch: pytest.MonkeyPatch) -> None:
         provider._client.models, "generate_content_stream", lambda **kwargs: iter(pieces)
     )
     assert list(provider.stream("system", "user")) == ["Hel", "lo"]
+
+def test_bedrock_requires_api_key() -> None:
+    with pytest.raises(LLMError, match="AWS_BEARER_TOKEN_BEDROCK"):
+        BedrockProvider(api_key="", model="anthropic.claude-sonnet-5-5")
+
+
+def test_bedrock_joins_the_text_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = BedrockProvider(api_key="fake-key", model="anthropic.claude-sonnet-5-5")
+    response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[
+            SimpleNamespace(type="thinking", thinking=""),  # must be skipped
+            SimpleNamespace(type="text", text="Hello "),
+            SimpleNamespace(type="text", text="world"),
+        ],
+    )
+    monkeypatch.setattr(provider._client.messages, "create", lambda **kwargs: response)
+    assert provider.generate("system", "user") == "Hello world"
+
+
+def test_bedrock_refusal_becomes_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = BedrockProvider(api_key="fake-key", model="anthropic.claude-sonnet-5-5")
+    response = SimpleNamespace(stop_reason="refusal", content=[])
+    monkeypatch.setattr(provider._client.messages, "create", lambda **kwargs: response)
+    with pytest.raises(LLMError, match="declined"):
+        provider.generate("system", "user")
