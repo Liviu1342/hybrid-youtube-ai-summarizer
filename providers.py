@@ -48,19 +48,21 @@ class OllamaProvider:
                 # Ollama's default context is 4096 tokens; long transcripts need more
                 options={"num_ctx": self.context_window},
             )
-        except ConnectionError:
-            raise LLMError("Ollama is not running. Start it and try again.") from None
-        except ollama.ResponseError as e:
-            if e.status_code == 404:
-                raise LLMError(
-                    f"Model '{self.model}' not found. Run: ollama pull {self.model}"
-                ) from None
-            raise LLMError(f"Ollama returned an error: {e.error}") from e
+        except (ConnectionError, ollama.ResponseError) as e:
+            raise self._friendly_error(e) from None
 
         content = response.message.content
         if not content:  # content is "str | None": the model may return nothing
             raise LLMError("The model returned an empty response. Try again.")
         return content
+
+    def _friendly_error(self, error: Exception) -> LLMError:
+        """Translate a technical Ollama error into a message the user understands."""
+        if isinstance(error, ConnectionError):
+            return LLMError("Ollama is not running. Start it and try again.")
+        if isinstance(error, ollama.ResponseError) and error.status_code == 404:
+            return LLMError(f"Model '{self.model}' not found. Run: ollama pull {self.model}")
+        return LLMError(f"Ollama returned an error: {error}")
 
 class GeminiProvider:
     """Runs a model in Google's cloud through the Gemini API (fast, needs an API key)."""
