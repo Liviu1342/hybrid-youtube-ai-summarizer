@@ -6,7 +6,7 @@ import anthropic
 import ollama
 import httpx2  # HTTP client used internally by google-genai
 import httpx  # HTTP client used internally by ollama
-from anthropic.lib.bedrock import AnthropicBedrockMantle
+from anthropic.lib.bedrock import AnthropicBedrock
 from google import genai
 from google.genai import errors, types
 from collections.abc import Iterator
@@ -155,22 +155,30 @@ class GeminiProvider:
         return LLMError("Could not connect to Gemini. Check your internet connection.")
 
 class BedrockProvider:
-    """Runs Claude in Amazon Bedrock (cloud, needs a Bedrock API key)."""
+    """Runs Claude in Amazon Bedrock (cloud, needs AWS access keys)."""
 
     def __init__(
         self,
-        api_key: str,
+        access_key: str,
+        secret_key: str,
         model: str,
         region: str = "us-east-1",
-        max_tokens: int = 16_000,
+        max_tokens: int = 4_096,
     ) -> None:
-        if not api_key:
-            raise LLMError("AWS_BEARER_TOKEN_BEDROCK is missing. Add it to your .env file.")
+        if not access_key or not secret_key:
+            raise LLMError(
+                "AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY is missing. Add them to your .env file."
+            )
         self.name = f"Bedrock ({model})"
         self.model = model
         self.max_tokens = max_tokens
-        # Bedrock-specific client; it already retries 429/5xx errors twice by itself
-        self._client = AnthropicBedrockMantle(api_key=api_key, aws_region=region)
+        # Bedrock-specific client: signs every request with the AWS keys (SigV4)
+        # and already retries 429/5xx errors twice by itself
+        self._client = AnthropicBedrock(
+            aws_access_key=access_key,
+            aws_secret_key=secret_key,
+            aws_region=region,
+        )
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         try:
@@ -202,22 +210,20 @@ class BedrockProvider:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "system": system_prompt,  # Claude takes the system prompt as its own field
-            "messages": [{"role": "user", "content": user_prompt}],
-            # A summary needs little reasoning: low effort = faster and cheaper
-            "output_config": {"effort": "low"},
+            "messages": [{"role": "user", "content": user_prompt}]
         }
 
     def _friendly_error(self, error: anthropic.APIError) -> LLMError:
         """Translate a technical Bedrock error into a message the user understands."""
         if isinstance(error, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
             return LLMError(
-                f"Bedrock rejected the API key or model access ({error.status_code}). "
-                "Check the key and that this model is enabled in your AWS account."
+                f"Bedrock rejected the AWS keys or model access ({error.status_code}): "
+                f"{error.message}"
             )
         if isinstance(error, anthropic.NotFoundError):
-            return LLMError(f"Model '{self.model}' not found on Bedrock. Check BEDROCK_MODEL.")
+                        return LLMError(f"Model '{self.model}' not found on Bedrock: {error.message}")
         if isinstance(error, anthropic.RateLimitError):
-            return LLMError("Bedrock rate limit reached. Wait a minute and try again.")
+                        return LLMError(f"Bedrock rate limit reached, wait a minute and try again: {error.message}")
         if isinstance(error, anthropic.APIStatusError):
             return LLMError(f"Bedrock returned an error ({error.status_code}): {error.message}")
         return LLMError("Could not connect to Bedrock. Check your internet connection.")

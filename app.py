@@ -25,7 +25,8 @@ def build_provider(choice: str) -> LLMProvider:
         )
     if choice == BEDROCK:
         return BedrockProvider(
-            api_key=os.getenv("AWS_BEARER_TOKEN_BEDROCK", ""),
+            access_key=os.getenv("AWS_ACCESS_KEY_ID", ""),
+            secret_key=os.getenv("AWS_SECRET_ACCESS_KEY", ""),
             model=os.getenv("BEDROCK_MODEL", "anthropic.claude-sonnet-5-5"),
             region=os.getenv("AWS_REGION", "us-east-1"),
         )
