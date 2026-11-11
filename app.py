@@ -6,7 +6,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from providers import GeminiProvider, LLMError, LLMProvider, OllamaProvider
-from summarizer import generate_summary
+from summarizer import stream_summary
 from utils import TranscriptError, extract_video_id, get_transcript
 
 load_dotenv()  # read .env once, when the app starts
@@ -58,11 +58,15 @@ if clicked and video_id:
     try:
         with st.spinner("Downloading transcript..."):
             transcript = cached_transcript(video_id)
+        st.session_state.pop("summary", None)  # hide the previous summary
+        st.divider()
         with st.spinner(f"Summarizing with {engine}..."):
-            summary = generate_summary(transcript, build_provider(engine), language)
+            # Show the text while the model writes it; returns the full text at the end
+            summary = st.write_stream(stream_summary(transcript, build_provider(engine), language))
         # session_state survives reruns: the summary stays on screen after any click
         st.session_state["summary"] = summary
         st.session_state["summary_video_id"] = video_id
+        st.rerun()  # redraw the page once, from session_state, with the download button
     except (TranscriptError, LLMError) as e:
         st.error(str(e))
 
