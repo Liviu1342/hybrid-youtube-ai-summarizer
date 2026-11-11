@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils import extract_video_id, get_transcript, TranscriptError
+from utils import extract_video_id, get_transcript, TranscriptError, clean_transcript
 from youtube_transcript_api import YouTubeTranscriptApi, VideoUnavailable
 
 VIDEO_ID = "dQw4w9WgXcQ"
@@ -45,3 +45,16 @@ def test_get_transcript_raises_for_unavailable_video(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(YouTubeTranscriptApi, "fetch", raise_unavailable)
     with pytest.raises(TranscriptError, match="does not exist or is private"):
         get_transcript("dQw4w9WgXcQ")
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("[♪♪♪] ♪ We're no strangers to love ♪", "We're no strangers to love"),
+        ("Hello [Music] world [Applause]", "Hello world"),
+        ("  too    many \n spaces ", "too many spaces"),
+        ("Normal text stays the same.", "Normal text stays the same."),
+        ("", ""),
+    ],
+)
+def test_clean_transcript_removes_noise(raw: str, expected: str) -> None:
+    assert clean_transcript(raw) == expected

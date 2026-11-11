@@ -14,6 +14,8 @@ from youtube_transcript_api import (
 
 # A YouTube video ID is always exactly 11 characters: letters, digits, "-" and "_"
 VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# Matches subtitle annotations such as [Music], [Applause] or [♪♪♪]
+ANNOTATION_PATTERN = re.compile(r"\[[^\]]*\]")
 
 
 class TranscriptError(Exception):
@@ -55,6 +57,12 @@ def extract_video_id(url: str) -> str | None:
         return video_id
     return None
 
+def clean_transcript(text: str) -> str:
+    """Remove subtitle noise (annotations, music notes, extra spaces)."""
+    text = ANNOTATION_PATTERN.sub(" ", text)  # drop [Music], [Applause], ...
+    text = text.replace("♪", " ")             # drop music notes around lyrics
+    return " ".join(text.split())             # collapse repeated whitespace
+
 
 def get_transcript(video_id: str, languages: tuple[str, ...] = ("ro", "en")) -> str:
     """Download a video's subtitles and join them into a single text.
@@ -78,4 +86,5 @@ def get_transcript(video_id: str, languages: tuple[str, ...] = ("ro", "en")) -> 
         raise TranscriptError("Could not connect to YouTube. Check your internet connection.") from e
 
     # The transcript arrives as timed "snippets"; we keep only the text
-    return " ".join(snippet.text.replace("\n", " ") for snippet in fetched)
+    raw_text = " ".join(snippet.text for snippet in fetched)
+    return clean_transcript(raw_text)
