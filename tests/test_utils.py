@@ -2,7 +2,8 @@
 
 import pytest
 
-from utils import extract_video_id
+from utils import extract_video_id, get_transcript, TranscriptError
+from youtube_transcript_api import YouTubeTranscriptApi, VideoUnavailable
 
 VIDEO_ID = "dQw4w9WgXcQ"
 
@@ -37,3 +38,10 @@ def test_extracts_id_from_valid_urls(url: str) -> None:
 )
 def test_returns_none_for_invalid_urls(url: str) -> None:
     assert extract_video_id(url) is None
+
+def test_get_transcript_raises_for_unavailable_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_unavailable(self, video_id, languages):
+        raise VideoUnavailable(video_id)
+    monkeypatch.setattr(YouTubeTranscriptApi, "fetch", raise_unavailable)
+    with pytest.raises(TranscriptError, match="does not exist or is private"):
+        get_transcript("dQw4w9WgXcQ")
