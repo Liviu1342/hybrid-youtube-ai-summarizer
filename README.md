@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/Liviu1342/hybrid-youtube-ai-summarizer/actions/workflows/tests.yml/badge.svg)](https://github.com/Liviu1342/hybrid-youtube-ai-summarizer/actions/workflows/tests.yml)
 
-Turn any YouTube video into structured study notes — **100% locally and privately with Ollama**, or **in the cloud with Google Gemini**, switchable with one click.
+Turn any YouTube video into structured study notes — **100% locally and privately with Ollama**, or **in the cloud with Google Gemini or Claude on Amazon Bedrock**, switchable with one click.
 
 ![App screenshot](docs/screenshot.png)
 
@@ -14,6 +14,8 @@ Turn any YouTube video into structured study notes — **100% locally and privat
 - **Friendly error handling** – clear messages for missing subtitles, private videos, unavailable models or network issues.
 - **Prompt-injection guard** – the transcript is passed to the model as delimited data, never as instructions.
 - **Markdown export** – download the summary as a `.md` file.
+- **Three interchangeable AI engines** – Ollama (local), Gemini and Claude Sonnet on Amazon Bedrock (cloud), all behind one `LLMProvider` interface.
+- **Live streaming** – the summary appears word by word as the model writes it.
 
 ## 🏗️ Architecture
 
@@ -24,13 +26,14 @@ flowchart LR
     S --> P{{"LLMProvider<br/>(Protocol)"}}
     P --> O["OllamaProvider<br/>local GPU"]
     P --> G["GeminiProvider<br/>Google cloud"]
+    P --> B["BedrockProvider<br/>Claude on AWS"]
 ```
 
 The UI depends only on the `LLMProvider` contract. Providers are created in a single factory (`build_provider`) and injected into `generate_summary`, so adding a new provider (e.g. OpenAI) means writing one class — no UI changes.
 
 ## 🛠️ Tech stack
 
-Python 3.10+ · Streamlit · youtube-transcript-api · Ollama (`llama3.1:8b`) · Google Gen AI SDK (Gemini) · python-dotenv
+Python 3.10+ · Streamlit · youtube-transcript-api · Ollama (`llama3.1:8b`) · Google Gen AI SDK (Gemini) · Anthropic SDK (Claude on Amazon Bedrock) · python-dotenv
 
 ## 🚀 Getting started
 
@@ -84,6 +87,9 @@ The app opens at <http://localhost:8501>.
 | `OLLAMA_MODEL` | Local model to use | `llama3.1:8b` |
 | `GEMINI_API_KEY` | Your Gemini API key (**never commit it**) | – |
 | `GEMINI_MODEL` | Gemini model name | – |
+| `AWS_BEARER_TOKEN_BEDROCK` | Your Amazon Bedrock API key (**never commit it**) | – |
+| `AWS_REGION` | AWS region of the Bedrock key | `us-east-1` |
+| `BEDROCK_MODEL` | Claude model ID on Bedrock | `anthropic.claude-sonnet-5-5` |
 
 ## 📁 Project structure
 
@@ -103,6 +109,6 @@ The app opens at <http://localhost:8501>.
 
 ## 🗺️ Roadmap
 
-- [ ] Remove subtitle noise (e.g. `[Music]`) before summarizing
+- [x] Remove subtitle noise (e.g. `[Music]`) before summarizing
 - [ ] Chunked summaries for very long videos
-- [ ] Unit tests and CI
+- [x] Unit tests and CI
