@@ -43,8 +43,14 @@ Python 3.10+ · Streamlit · youtube-transcript-api · Ollama (`llama3.1:8b`) ·
 ```bash
 git clone https://github.com/Liviu1342/hybrid-youtube-ai-summarizer.git
 cd hybrid-youtube-ai-summarizer
-python -m venv venv
+python -m venv venv          # macOS / Linux: python3 -m venv venv
 ```
+> **macOS note:** the built-in `python3` may be version 3.9, which is too old.
+>
+> If `python3 --version` shows anything below 3.10, install a newer Python
+> (e.g. `brew install python@3.13`) and create the environment with
+> `python3.13 -m venv venv`.
+
 
 Activate the virtual environment:
 
