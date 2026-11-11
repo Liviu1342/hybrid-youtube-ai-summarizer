@@ -1,6 +1,7 @@
 """Tests for prompt building, using a fake provider instead of a real AI."""
 
-from summarizer import MAX_TRANSCRIPT_CHARS, generate_summary
+from collections.abc import Iterator
+from summarizer import MAX_TRANSCRIPT_CHARS, generate_summary, stream_summary
 
 
 class FakeProvider:
@@ -16,6 +17,12 @@ class FakeProvider:
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
         return "## TL;DR\nFake summary"
+
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        self.system_prompt = system_prompt
+        self.user_prompt = user_prompt
+        yield "## TL;DR\n"
+        yield "Fake summary"
 
 
 def test_returns_the_provider_answer() -> None:
@@ -39,3 +46,10 @@ def test_long_transcript_is_truncated() -> None:
     provider = FakeProvider()
     generate_summary("x" * (MAX_TRANSCRIPT_CHARS + 5_000), provider)
     assert provider.user_prompt.count("x") == MAX_TRANSCRIPT_CHARS
+
+def test_stream_summary_yields_the_provider_pieces() -> None:
+    provider = FakeProvider()
+    pieces = list(stream_summary("Hello world", provider, language="Romanian"))
+    assert pieces == ["## TL;DR\n", "Fake summary"]
+    assert provider.user_prompt == "<transcript>\nHello world\n</transcript>"
+    assert "Write your answer in Romanian" in provider.system_prompt

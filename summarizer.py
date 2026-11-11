@@ -1,5 +1,6 @@
 """Builds the prompts and asks any LLM provider for a structured summary."""
 
+from collections.abc import Iterator
 from providers import LLMProvider
 
 # ~4 characters per token: 24k characters stay safely inside an 8k-token context
@@ -29,16 +30,32 @@ Rules:
 """
 
 
-def generate_summary(
-    transcript: str,
-    provider: LLMProvider,
-    language: str = "English",
-) -> str:
-    """Ask the given provider for a structured Markdown summary of a transcript."""
+def build_prompts(transcript: str, language: str) -> tuple[str, str]:
+    """Return the (system_prompt, user_prompt) pair for a transcript."""
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
         # Keep the beginning; a silent context overflow would lose it instead
         transcript = transcript[:MAX_TRANSCRIPT_CHARS]
 
     system_prompt = SYSTEM_PROMPT.format(language=language)
     user_prompt = f"<transcript>\n{transcript}\n</transcript>"
+    return system_prompt, user_prompt
+
+
+def generate_summary(
+    transcript: str,
+    provider: LLMProvider,
+    language: str = "English",
+) -> str:
+    """Ask the given provider for a structured Markdown summary of a transcript."""
+    system_prompt, user_prompt = build_prompts(transcript, language)
     return provider.generate(system_prompt, user_prompt)
+
+
+def stream_summary(
+    transcript: str,
+    provider: LLMProvider,
+    language: str = "English",
+) -> Iterator[str]:
+    """Same summary as generate_summary, but yielded piece by piece."""
+    system_prompt, user_prompt = build_prompts(transcript, language)
+    return provider.stream(system_prompt, user_prompt)

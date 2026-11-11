@@ -23,6 +23,10 @@ class LLMProvider(Protocol):
         """Send the prompts to the model and return its text answer."""
         ...
 
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        """Send the prompts and yield the answer piece by piece."""
+        ...
+
 
 class OllamaProvider:
     """Runs a model locally through the Ollama server (free and private)."""
