@@ -1,5 +1,7 @@
 # 🎬 Hybrid YouTube AI Summarizer
 
+[![Tests](https://github.com/Liviu1342/hybrid-youtube-ai-summarizer/actions/workflows/tests.yml/badge.svg)](https://github.com/Liviu1342/hybrid-youtube-ai-summarizer/actions/workflows/tests.yml)
+
 Turn any YouTube video into structured study notes — **100% locally and privately with Ollama**, or **in the cloud with Google Gemini**, switchable with one click.
 
 ![App screenshot](docs/screenshot.png)
