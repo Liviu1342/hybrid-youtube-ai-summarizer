@@ -1,7 +1,7 @@
 """Tests for prompt building, using a fake provider instead of a real AI."""
 
 from collections.abc import Iterator
-from summarizer import MAX_TRANSCRIPT_CHARS, generate_summary, stream_summary
+from summarizer import MAX_TRANSCRIPT_CHARS, generate_summary, split_into_chunks, stream_summary
 
 
 class FakeProvider:
@@ -53,3 +53,18 @@ def test_stream_summary_yields_the_provider_pieces() -> None:
     assert pieces == ["## TL;DR\n", "Fake summary"]
     assert provider.user_prompt == "<transcript>\nHello world\n</transcript>"
     assert "Write your answer in Romanian" in provider.system_prompt
+
+def test_short_text_is_a_single_chunk() -> None:
+    assert split_into_chunks("one two three", max_chars=100) == ["one two three"]
+
+
+def test_empty_text_has_no_chunks() -> None:
+    assert split_into_chunks("   ", max_chars=100) == []
+
+
+def test_long_text_is_split_between_words() -> None:
+    text = " ".join(f"word{i}" for i in range(1_000))
+    chunks = split_into_chunks(text, max_chars=50)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 50 for chunk in chunks)
+    assert " ".join(chunks) == text  # nothing lost, nothing duplicated

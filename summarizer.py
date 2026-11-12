@@ -29,6 +29,22 @@ Rules:
 - Ignore filler such as music markers, greetings or sponsor messages.
 """
 
+def split_into_chunks(text: str, max_chars: int = MAX_TRANSCRIPT_CHARS) -> list[str]:
+    """Split text into pieces of at most max_chars, cutting only between words."""
+    chunks: list[str] = []
+    current: list[str] = []  # words of the chunk being built
+    length = 0  # characters in the current chunk, spaces included
+    for word in text.split():
+        extra = len(word) + (1 if current else 0)  # +1 for the joining space
+        if current and length + extra > max_chars:
+            chunks.append(" ".join(current))
+            current, length = [], 0
+            extra = len(word)
+        current.append(word)
+        length += extra
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
 
 def build_prompts(transcript: str, language: str) -> tuple[str, str]:
     """Return the (system_prompt, user_prompt) pair for a transcript."""
