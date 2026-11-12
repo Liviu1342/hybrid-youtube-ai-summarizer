@@ -1,7 +1,13 @@
 """Tests for prompt building, using a fake provider instead of a real AI."""
 
 from collections.abc import Iterator
-from summarizer import MAX_TRANSCRIPT_CHARS, generate_summary, split_into_chunks, stream_summary
+from summarizer import (
+    MAX_TRANSCRIPT_CHARS,
+    generate_summary,
+    split_into_chunks,
+    stream_summary,
+    summarize_chunks,
+)
 
 
 class FakeProvider:
@@ -68,3 +74,10 @@ def test_long_text_is_split_between_words() -> None:
     assert len(chunks) > 1
     assert all(len(chunk) <= 50 for chunk in chunks)
     assert " ".join(chunks) == text  # nothing lost, nothing duplicated
+
+def test_summarize_chunks_makes_notes_for_each_chunk() -> None:
+    provider = FakeProvider()
+    notes = summarize_chunks(["first part", "second part"], provider)
+    assert notes == ["## TL;DR\nFake summary", "## TL;DR\nFake summary"]
+    assert provider.user_prompt == "<transcript>\nsecond part\n</transcript>"
+    assert "notes" in provider.system_prompt
