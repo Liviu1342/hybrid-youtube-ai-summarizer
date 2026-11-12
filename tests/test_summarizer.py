@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from summarizer import (
     MAX_TRANSCRIPT_CHARS,
+    build_prompts,
     generate_summary,
     split_into_chunks,
     stream_summary,
@@ -48,10 +49,18 @@ def test_requested_language_is_in_system_prompt() -> None:
     assert "Write your answer in Romanian" in provider.system_prompt
 
 
-def test_long_transcript_is_truncated() -> None:
+def test_build_prompts_truncates_as_a_safety_net() -> None:
+    _, user_prompt = build_prompts("x" * (MAX_TRANSCRIPT_CHARS + 5_000), "English")
+    assert user_prompt.count("x") == MAX_TRANSCRIPT_CHARS
+
+
+def test_long_transcript_is_summarized_from_chunk_notes() -> None:
     provider = FakeProvider()
-    generate_summary("x" * (MAX_TRANSCRIPT_CHARS + 5_000), provider)
-    assert provider.user_prompt.count("x") == MAX_TRANSCRIPT_CHARS
+    transcript = " ".join(["word"] * 6_000)  # ~30,000 characters = 2 chunks
+    generate_summary(transcript, provider)
+    # The final request received the notes of both chunks, not the raw transcript
+    notes = "## TL;DR\nFake summary"
+    assert provider.user_prompt == f"<transcript>\n{notes}\n\n{notes}\n</transcript>"
 
 def test_stream_summary_yields_the_provider_pieces() -> None:
     provider = FakeProvider()

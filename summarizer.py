@@ -75,13 +75,22 @@ def summarize_chunks(chunks: list[str], provider: LLMProvider) -> list[str]:
     return [provider.generate(CHUNK_PROMPT, wrap_transcript(chunk)) for chunk in chunks]
 
 
+def prepare_transcript(transcript: str, provider: LLMProvider) -> str:
+    """Return text that fits in one request: the transcript, or notes on its chunks."""
+    if len(transcript) <= MAX_TRANSCRIPT_CHARS:
+        return transcript  # short video: one request, as before
+    notes = summarize_chunks(split_into_chunks(transcript), provider)
+    return "\n\n".join(notes)
+
+
 def generate_summary(
     transcript: str,
     provider: LLMProvider,
     language: str = "English",
 ) -> str:
     """Ask the given provider for a structured Markdown summary of a transcript."""
-    system_prompt, user_prompt = build_prompts(transcript, language)
+    text = prepare_transcript(transcript, provider)  # the "map" step, if needed
+    system_prompt, user_prompt = build_prompts(text, language)
     return provider.generate(system_prompt, user_prompt)
 
 
@@ -91,5 +100,6 @@ def stream_summary(
     language: str = "English",
 ) -> Iterator[str]:
     """Same summary as generate_summary, but yielded piece by piece."""
-    system_prompt, user_prompt = build_prompts(transcript, language)
+    text = prepare_transcript(transcript, provider)  # the "map" step, if needed
+    system_prompt, user_prompt = build_prompts(text, language)
     return provider.stream(system_prompt, user_prompt)
